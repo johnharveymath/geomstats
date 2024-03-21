@@ -81,6 +81,18 @@ def _find_product_shape(factors, point_ndim):
     return len(factors), *factors[0].shape
 
 
+def error_wrapped(func):
+    """Ensure that the warping function returns a positive number."""
+
+    def wrapped_function(*args):
+        result = func(*args)
+        print(result)
+        geomstats.errors.check_positive(result, "Value of warping function")
+        return result
+
+    return wrapped_function
+
+
 class _IterateOverFactorsMixins:
     def __init__(
         self, factors, cum_index, pool_outputs, has_mixed_fields, *args, **kwargs
@@ -730,3 +742,128 @@ class ProductRiemannianMetric(_IterateOverFactorsMixins, RiemannianMetric):
             return self._space.embed_to_product(values)
 
         return geod_fun
+
+
+class WarpedProductRiemannianMetric(_IterateOverFactorsMixins, RiemannianMetric):
+    """Class for warped product."""
+
+    def __init__(self, space, warping_function):
+        if len(space.factors) != 2:
+            raise ValueError("The space must be a product manifold with two factors.")
+
+        self.warping_function = error_wrapped(warping_function)
+
+        factors = [factor.metric for factor in space.factors]
+        factor_signatures = [metric.signature for metric in factors]
+
+        sig_pos = sum(sig[0] for sig in factor_signatures)
+        sig_neg = sum(sig[1] for sig in factor_signatures)
+
+        super().__init__(
+            space=space,
+            factors=factors,
+            cum_index=space._cum_index,
+            pool_outputs=False,
+            has_mixed_fields=space._has_mixed_fields,
+            signature=(sig_pos, sig_neg),
+        )
+
+    @property
+    def shape(self):
+        """Shape of space."""
+        return self._space.shape
+
+    @property
+    def point_ndim(self):
+        """Point type of space."""
+        return self._space.point_ndim
+
+    def metric_matrix(self, base_point=None):
+        """Compute the matrix of the inner-product.
+
+        Matrix of the inner-product defined by the Riemmanian metric
+        at point base_point of the manifold.
+
+        Parameters
+        ----------
+        base_point : array-like, shape=[..., self.shape]
+            Point on the manifold at which to compute the inner-product matrix.
+            Optional, default: None.
+
+        Returns
+        -------
+        matrix : array-like, shape as described below
+            Matrix of the inner-product at the base point.
+            The matrix is in block diagonal form with a block for each factor.
+            Each block is the same size as the metric_matrix for that factor.
+        """
+        factor_matrices = self._iterate_over_factors(
+            "metric_matrix", {"base_point": base_point}
+        )
+        factor_matrices[1] = (
+            self.warping_function(self._space.projection(base_point)[0])
+            * factor_matrices[1]
+        )
+        return _block_diagonal(factor_matrices)
+
+    def inner_product(self, tangent_vec_a, tangent_vec_b, base_point):
+        """Compute the inner-product of two tangent vectors at a base point.
+
+        Inner product defined by the Riemannian metric at point `base_point`
+        between tangent vectors `tangent_vec_a` and `tangent_vec_b`.
+
+        Parameters
+        ----------
+        tangent_vec_a : array-like, shape=[..., self.shape]
+            First tangent vector at base point.
+        tangent_vec_b : array-like, shape=[..., self.shape]
+            Second tangent vector at base point.
+        base_point : array-like, shape=[..., self.shape]
+            Point on the manifold.
+            Optional, default: None.
+
+        Returns
+        -------
+        inner_prod : array-like, shape=[...,]
+            Inner-product of the two tangent vectors.
+        """
+        args = {
+            "tangent_vec_a": tangent_vec_a,
+            "tangent_vec_b": tangent_vec_b,
+            "base_point": base_point,
+        }
+        inner_products = self._iterate_over_factors("inner_product", args)
+        inner_products[1] = (
+            self.warping_function(self._space.projection(base_point)[0])
+            * inner_products[1]
+        )
+        return sum(inner_products)
+
+    def squared_norm(self, vector, base_point=None):
+        """Compute the square of the norm of a vector.
+
+        Squared norm of a vector associated to the inner product
+        at the tangent space at a base point.
+
+        Parameters
+        ----------
+        vector : array-like, shape=[..., self.shape]
+            Vector.
+        base_point : array-like, shape=[..., self.shape]
+            Base point.
+            Optional, default: None.
+
+        Returns
+        -------
+        sq_norm : array-like, shape=[...,]
+            Squared norm.
+        """
+        args = {
+            "vector": vector,
+            "base_point": base_point,
+        }
+        sq_norms = self._iterate_over_factors("squared_norm", args)
+        sq_norms[1] = (
+            self.warping_function(self._space.projection(base_point)[0]) * sq_norms[1]
+        )
+        return sum(sq_norms)
