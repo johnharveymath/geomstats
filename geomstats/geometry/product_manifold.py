@@ -88,7 +88,7 @@ def error_wrapped(func):
         result = func(*args)
         #geomstats.errors.check_positive(result, "Value of warping function")
         #TODO make errors.check_all_positive
-        return result
+        return gs.squeeze(result, axis=-1)
 
     return wrapped_function
 
@@ -745,7 +745,33 @@ class ProductRiemannianMetric(_IterateOverFactorsMixins, RiemannianMetric):
 
 
 class WarpedProductRiemannianMetric(_IterateOverFactorsMixins, RiemannianMetric):
-    """Class for warped product."""
+    """Class for warped product.
+
+    This class provides an alternative metric for objects of the ProductManifold type which have
+    two factors. Instead of the standard ProductRiemannianMetric, the metric on the second factor
+    (the fiber) is scaled using a function defined on the first factor (the base).
+
+    Parameters
+    ----------
+    space : ProductManifold
+        A product manifold with two factors, the base and the fiber
+    warping_function : callable
+        A function taking an array of points on the base to an array of positive numbers.
+
+    Examples
+    --------
+    This example provides the 2-dimensional sphere as a warped product. Note that to use this
+    metric the user should ensure that only the interval [-pi, pi] in the base is used.
+
+    >>> base = Euclidean(1)
+    >>> fiber = Hypersphere(1)
+    >>> def warping_function(arg):
+    >>>     return gs.cos(arg) ** 2
+
+    >>> product_manifold = ProductManifold([base, fiber])
+    >>> warped_metric = WarpedProductRiemannianMetric(product_manifold, warping_function)
+    >>> product_manifold.equip_with_metric(warped_metric)
+"""
 
     def __init__(self, space, warping_function):
         if len(space.factors) != 2:
@@ -800,9 +826,9 @@ class WarpedProductRiemannianMetric(_IterateOverFactorsMixins, RiemannianMetric)
         factor_matrices = self._iterate_over_factors(
             "metric_matrix", {"base_point": base_point}
         )
-        factor_matrices[1] = (
+        factor_matrices[1] = gs.transpose(
             self.warping_function(self._space.project_from_product(base_point)[0])
-            * factor_matrices[1]
+            * gs.transpose(factor_matrices[1])
         )
         return _block_diagonal(factor_matrices)
 
