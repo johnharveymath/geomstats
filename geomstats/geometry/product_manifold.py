@@ -86,8 +86,8 @@ def error_wrapped(func):
 
     def wrapped_function(*args):
         result = func(*args)
-        print(result)
-        geomstats.errors.check_positive(result, "Value of warping function")
+        #geomstats.errors.check_positive(result, "Value of warping function")
+        #TODO make errors.check_all_positive
         return result
 
     return wrapped_function
@@ -801,7 +801,7 @@ class WarpedProductRiemannianMetric(_IterateOverFactorsMixins, RiemannianMetric)
             "metric_matrix", {"base_point": base_point}
         )
         factor_matrices[1] = (
-            self.warping_function(self._space.projection(base_point)[0])
+            self.warping_function(self._space.project_from_product(base_point)[0])
             * factor_matrices[1]
         )
         return _block_diagonal(factor_matrices)
@@ -834,7 +834,7 @@ class WarpedProductRiemannianMetric(_IterateOverFactorsMixins, RiemannianMetric)
         }
         inner_products = self._iterate_over_factors("inner_product", args)
         inner_products[1] = (
-            self.warping_function(self._space.projection(base_point)[0])
+            self.warping_function(self._space.project_from_product(base_point)[0])
             * inner_products[1]
         )
         return sum(inner_products)
@@ -864,6 +864,6 @@ class WarpedProductRiemannianMetric(_IterateOverFactorsMixins, RiemannianMetric)
         }
         sq_norms = self._iterate_over_factors("squared_norm", args)
         sq_norms[1] = (
-            self.warping_function(self._space.projection(base_point)[0]) * sq_norms[1]
+            self.warping_function(self._space.project_from_product(base_point)[0]) * sq_norms[1]
         )
         return sum(sq_norms)
